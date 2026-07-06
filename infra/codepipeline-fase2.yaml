@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CodePipeline V2 para Tesouro Nacional Fase 2 (isolado do pipeline da Fase 1).
+  Source: GitHub via CodeStar Connection → Build: CodeBuild → Deploy: EKS namespace tesouro-fase2.
+
+Parameters:
+  ConnectionArn:
+    Type: String
+    Default: arn:aws:codeconnections:us-east-1:983004127488:connection/2031c29f-e77b-4a02-bfc6-90235e40394a
+    Description: ARN da CodeStar Connection para o GitHub
+
+  FullRepositoryId:
+    Type: String
+    Default: dataRainBR/tesouro-nacional-poc-fase2
+    Description: Owner/Repo no GitHub
+
+  BranchName:
+    Type: String
+    Default: main
+
+  EksClusterName:
+    Type: String
+    Default: tesouro-nacional
+
+  EksNamespace:
+    Type: String
+    Default: tesouro-fase2
+
+  BackendEcrRepo:
+    Type: String
+    Default: fase2-backend
+
+  FrontendEcrRepo:
+    Type: String
+    Default: fase2-frontend
+
+Resources:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Bucket de artefatos (isolado da Fase 1)
+  # ─────────────────────────────────────────────────────────────────────────────
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub fase2-pipeline-artifacts-${AWS::AccountId}
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAfter7Days
+            Status: Enabled
+            ExpirationInDays: 7
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # IAM Role — CodePipeline
+  # ─────────────────────────────────────────────────────────────────────────────
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: fase2-codepipeline-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: Fase2PipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub ${ArtifactBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                Resource: !Ref ConnectionArn
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource:
+                  - !GetAtt BuildProject.Arn
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # IAM Role — CodeBuild
+  # ─────────────────────────────────────────────────────────────────────────────
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: fase2-codebuild-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: Fase2BuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+              # Artefatos S3
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub ${ArtifactBucket.Arn}/*
+              # ECR
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource:
+                  - !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${BackendEcrRepo}
+                  - !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${FrontendEcrRepo}
+              # EKS
+              - Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                Resource:
+                  - !Sub arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${EksClusterName}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # CodeBuild Project
+  # ─────────────────────────────────────────────────────────────────────────────
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: fase2-build
+      Description: Build e deploy do Tesouro Nacional Fase 2 (backend + frontend → ECR → EKS)
+      ServiceRole: !GetAtt BuildRole.Arn
+      TimeoutInMinutes: 20
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: EKS_CLUSTER
+            Value: !Ref EksClusterName
+          - Name: NAMESPACE
+            Value: !Ref EksNamespace
+          - Name: BACKEND_ECR_REPO
+            Value: !Ref BackendEcrRepo
+          - Name: FRONTEND_ECR_REPO
+            Value: !Ref FrontendEcrRepo
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: /aws/codebuild/fase2-build
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # CodePipeline V2
+  # ─────────────────────────────────────────────────────────────────────────────
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: fase2-pipeline
+      PipelineType: V2
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        # ── Source ──
+        - Name: Source
+          Actions:
+            - Name: GitHub
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: !Ref ConnectionArn
+                FullRepositoryId: !Ref FullRepositoryId
+                BranchName: !Ref BranchName
+                DetectChanges: 'true'
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts:
+                - Name: SourceOutput
+              RunOrder: 1
+
+        # ── Build & Deploy ──
+        - Name: BuildAndDeploy
+          Actions:
+            - Name: BuildDeploy
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref BuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 1
+
+Outputs:
+  PipelineName:
+    Value: !Ref Pipeline
+  PipelineUrl:
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
+  BuildProjectName:
+    Value: !Ref BuildProject
+  BuildRoleArn:
+    Description: Adicionar esta role ao aws-auth ConfigMap do EKS para permitir kubectl
+    Value: !GetAtt BuildRole.Arn
