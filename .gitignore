@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Production
+dist/
+build/
+.next/
+out/
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env*.local
+.env
+
+# Kubernetes secrets (contêm tokens/credenciais — nunca versionar)
+k8s/secret.yaml
+k8s/*secret*.yaml
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE
+.vscode/
+.idea/
+node_modules/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Fine-tuning data
+training_data.jsonl

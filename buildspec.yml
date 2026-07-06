@@ -1,0 +1,65 @@
+version: 0.2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tesouro Nacional — Build & Deploy
+# Replica os passos do GitHub Actions: build Docker → push ECR → deploy EKS
+# ─────────────────────────────────────────────────────────────────────────────
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: us-east-1
+    EKS_CLUSTER: tesouro-nacional
+    NAMESPACE: tesouro
+    BACKEND_ECR_REPO: tesouro-backend
+    FRONTEND_ECR_REPO: tesouro-frontend
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - echo "Instalando kubectl..."
+      - curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      - chmod +x kubectl && mv kubectl /usr/local/bin/
+
+  pre_build:
+    commands:
+      - echo "Autenticando no ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - BACKEND_IMAGE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$BACKEND_ECR_REPO
+      - FRONTEND_IMAGE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$FRONTEND_ECR_REPO
+
+  build:
+    commands:
+      # ── Backend ──
+      - echo "Building backend..."
+      - docker build --platform linux/amd64 -f backend/Dockerfile.prod -t $BACKEND_IMAGE:latest -t $BACKEND_IMAGE:$COMMIT_HASH .
+      - docker push $BACKEND_IMAGE:latest
+      - docker push $BACKEND_IMAGE:$COMMIT_HASH
+
+      # ── Frontend ──
+      - echo "Building frontend..."
+      - docker build --platform linux/amd64 -f frontend/Dockerfile -t $FRONTEND_IMAGE:latest -t $FRONTEND_IMAGE:$COMMIT_HASH .
+      - docker push $FRONTEND_IMAGE:latest
+      - docker push $FRONTEND_IMAGE:$COMMIT_HASH
+
+  post_build:
+    commands:
+      - echo "Configurando kubectl..."
+      - aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name $EKS_CLUSTER
+
+      - echo "Deploy backend no EKS..."
+      - kubectl rollout restart deployment/tesouro-backend -n $NAMESPACE
+      - kubectl rollout status deployment/tesouro-backend -n $NAMESPACE --timeout=120s
+
+      - echo "Deploy frontend no EKS..."
+      - kubectl rollout restart deployment/tesouro-frontend -n $NAMESPACE
+      - kubectl rollout status deployment/tesouro-frontend -n $NAMESPACE --timeout=120s
+
+      - echo "Deploy concluído com sucesso!"
+
+artifacts:
+  files:
+    - '**/*'
+  discard-paths: no

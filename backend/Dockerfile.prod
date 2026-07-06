@@ -1,0 +1,49 @@
+FROM public.ecr.aws/docker/library/node:20-slim AS builder
+
+WORKDIR /app
+
+# Copy root workspace files
+COPY package*.json ./
+COPY packages/shared/package*.json ./packages/shared/
+COPY packages/shared/tsconfig.json ./packages/shared/
+COPY packages/shared/src ./packages/shared/src
+COPY backend/package*.json ./backend/
+COPY backend/tsconfig.json ./backend/
+
+# Install only the workspaces needed for the backend build
+RUN npm ci --workspace=packages/shared --workspace=backend --include-workspace-root
+
+# Build shared package
+WORKDIR /app/packages/shared
+RUN npx tsc
+
+# Build backend
+WORKDIR /app/backend
+COPY backend/src ./src
+RUN npx tsc
+
+# Production image
+FROM public.ecr.aws/docker/library/node:20-slim
+
+WORKDIR /app
+
+# Copy workspace structure (needed for workspace resolution)
+COPY package*.json ./
+COPY packages/shared/package*.json ./packages/shared/
+COPY backend/package*.json ./backend/
+
+# Install production deps only
+RUN npm ci --workspace=packages/shared --workspace=backend --include-workspace-root --omit=dev
+
+# Copy built artifacts
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/backend/dist ./backend/dist
+
+WORKDIR /app/backend
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+EXPOSE 3001
+
+CMD ["node", "dist/index.js"]
