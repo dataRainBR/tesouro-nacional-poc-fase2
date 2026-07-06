@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fase2-backend
+  namespace: tesouro-fase2
+  labels:
+    app: fase2-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fase2-backend
+  template:
+    metadata:
+      labels:
+        app: fase2-backend
+    spec:
+      serviceAccountName: fase2-backend-sa
+      containers:
+        - name: backend
+          image: 983004127488.dkr.ecr.us-east-1.amazonaws.com/fase2-backend:latest
+          ports:
+            - containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: fase2-config
+            - secretRef:
+                name: fase2-secrets
+          env:
+            - name: CORS_ORIGIN
+              value: "*"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 5

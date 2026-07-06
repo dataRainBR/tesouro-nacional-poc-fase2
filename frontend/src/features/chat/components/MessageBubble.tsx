@@ -38,9 +38,11 @@ interface MessageBubbleProps {
   onEdit?: (newContent: string) => void
   onRetry?: () => void
   isLastUserMessage?: boolean
+  /** Nome legível do agente/modelo que gerou a resposta (ex: "[REDSHIFT] Claude Opus 4.6") */
+  sourceLabel?: string
 }
 
-export function MessageBubble({ message, onCopy, onFeedback, onEdit, onRetry }: MessageBubbleProps) {
+export function MessageBubble({ message, onCopy, onFeedback, onEdit, onRetry, sourceLabel }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const isError = !isUser && message.content.startsWith('Desculpe, ocorreu um erro')
   const [editing, setEditing] = useState(false)
@@ -90,6 +92,10 @@ export function MessageBubble({ message, onCopy, onFeedback, onEdit, onRetry }: 
       </div>
 
       <div className={`flex-1 ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+        {/* Identifica de onde veio a resposta — útil ao alternar entre agentes/modelos na mesma conversa */}
+        {!isUser && sourceLabel && (
+          <span className="text-[10px] font-medium text-neutral-400 px-1">{sourceLabel}</span>
+        )}
         <div className={`rounded-lg px-4 py-3 ${
           isUser && editing
             ? 'w-full max-w-[95%]'

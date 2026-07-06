@@ -1,17 +1,17 @@
 version: 0.2
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tesouro Nacional — Build & Deploy
-# Replica os passos do GitHub Actions: build Docker → push ECR → deploy EKS
+# Tesouro Nacional Fase 2 — Build & Deploy
+# Build Docker → Push ECR → Deploy EKS (namespace tesouro-fase2)
 # ─────────────────────────────────────────────────────────────────────────────
 
 env:
   variables:
     AWS_DEFAULT_REGION: us-east-1
     EKS_CLUSTER: tesouro-nacional
-    NAMESPACE: tesouro
-    BACKEND_ECR_REPO: tesouro-backend
-    FRONTEND_ECR_REPO: tesouro-frontend
+    NAMESPACE: tesouro-fase2
+    BACKEND_ECR_REPO: fase2-backend
+    FRONTEND_ECR_REPO: fase2-frontend
 
 phases:
   install:
@@ -49,15 +49,25 @@ phases:
       - echo "Configurando kubectl..."
       - aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name $EKS_CLUSTER
 
-      - echo "Deploy backend no EKS..."
-      - kubectl rollout restart deployment/tesouro-backend -n $NAMESPACE
-      - kubectl rollout status deployment/tesouro-backend -n $NAMESPACE --timeout=120s
+      - echo "Aplicando manifestos..."
+      - kubectl apply -f k8s/namespace.yaml
+      - kubectl apply -f k8s/serviceaccount.yaml
+      - kubectl apply -f k8s/configmap.yaml
+      - kubectl apply -f k8s/backend-deployment.yaml
+      - kubectl apply -f k8s/backend-service.yaml
+      - kubectl apply -f k8s/frontend-deployment.yaml
+      - kubectl apply -f k8s/frontend-service.yaml
+      - kubectl apply -f k8s/ingress.yaml
 
-      - echo "Deploy frontend no EKS..."
-      - kubectl rollout restart deployment/tesouro-frontend -n $NAMESPACE
-      - kubectl rollout status deployment/tesouro-frontend -n $NAMESPACE --timeout=120s
+      - echo "Deploy backend..."
+      - kubectl rollout restart deployment/fase2-backend -n $NAMESPACE
+      - kubectl rollout status deployment/fase2-backend -n $NAMESPACE --timeout=120s
 
-      - echo "Deploy concluído com sucesso!"
+      - echo "Deploy frontend..."
+      - kubectl rollout restart deployment/fase2-frontend -n $NAMESPACE
+      - kubectl rollout status deployment/fase2-frontend -n $NAMESPACE --timeout=120s
+
+      - echo "Deploy Fase 2 concluído com sucesso!"
 
 artifacts:
   files:

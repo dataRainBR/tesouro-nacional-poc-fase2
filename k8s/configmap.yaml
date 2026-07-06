@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fase2-config
+  namespace: tesouro-fase2
+data:
+  PORT: "3001"
+  NODE_ENV: "production"
+  AWS_REGION: "us-east-1"
+  COGNITO_USER_POOL_ID: "us-east-1_cn2KoIs4i"
+  COGNITO_CLIENT_ID: "2h6e335kg3j6sjdirpnago44e4"
+  COGNITO_CLIENT_SECRET: ""
+  DYNAMODB_CHATS_TABLE: "fase2-chats"
+  DYNAMODB_MESSAGES_TABLE: "fase2-messages"
+  DYNAMODB_TABLE_ORGANIZATION: "fase2-organization"
+  DYNAMODB_TABLE_AGENTS: "fase2-agents"
+  DYNAMODB_TABLE_PARECERES: "fase2-pareceres"
+  DYNAMODB_TABLE_COMPARATIVOS: "fase2-comparacoes"
+  DYNAMODB_TABLE_FINETUNED_MODELS: "fase2-finetuned-models"
+  DYNAMODB_TABLE_EVAL_JOBS: "fase2-eval-jobs"
+  DYNAMODB_TABLE_EVAL_RESULTS: "fase2-eval-results"
+  DYNAMODB_TABLE_EVAL_FEEDBACK: "fase2-eval-feedback"
+  TITLE_SUMMARIZER_AGENT_ID: "UPHYBYT7DK"
+  TITLE_SUMMARIZER_ALIAS_ID: "PGC7B8CJBV"
+  USE_SECRETS_MANAGER: "false"
+  SISWEB_API_URL: "https://apiapex.tesouro.gov.br/aria/v1/logos_metricas/custom/mensagem"
+  SISWEB_ID_SOLUCAO: "441"

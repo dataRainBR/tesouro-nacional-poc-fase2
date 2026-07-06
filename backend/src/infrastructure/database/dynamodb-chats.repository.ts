@@ -305,6 +305,8 @@ export async function getMessages(chatId: string, limit?: number, before?: strin
     timestamp: item.timestamp,
     feedback: item.feedback || null,
     trace: item.trace || undefined,
+    agentId: item.agentId || undefined,
+    finetunedModelId: item.finetunedModelId || undefined,
   })) as Message[]
 
   // Se usamos limit com ScanIndexForward=false, reverter para ordem cronológica
@@ -323,7 +325,7 @@ export async function addMessage(
   role: 'user' | 'assistant',
   content: string,
   userId: string,
-  metrics?: { inputTokens?: number; outputTokens?: number; latencyMs?: number; agentId?: string; userName?: string; siswebStatus?: 'pending' | 'sent' | 'failed'; trace?: any[] }
+  metrics?: { inputTokens?: number; outputTokens?: number; latencyMs?: number; agentId?: string; finetunedModelId?: string; userName?: string; siswebStatus?: 'pending' | 'sent' | 'failed'; trace?: any[] }
 ): Promise<string> {
   const client = getDynamoClient()
 
@@ -346,6 +348,7 @@ export async function addMessage(
     if (metrics.outputTokens !== undefined) item.outputTokens = metrics.outputTokens
     if (metrics.latencyMs !== undefined) item.latencyMs = metrics.latencyMs
     if (metrics.agentId) item.agentId = metrics.agentId
+    if (metrics.finetunedModelId) item.finetunedModelId = metrics.finetunedModelId
     if (metrics.siswebStatus) item.siswebStatus = metrics.siswebStatus
     if (metrics.trace && metrics.trace.length > 0) {
       // Remover undefined values para evitar erro do DynamoDB SDK

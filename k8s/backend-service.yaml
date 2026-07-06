@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fase2-backend-service
+  namespace: tesouro-fase2
+  labels:
+    app: fase2-backend
+spec:
+  selector:
+    app: fase2-backend
+  ports:
+    - protocol: TCP
+      port: 3001
+      targetPort: 3001
+  type: ClusterIP

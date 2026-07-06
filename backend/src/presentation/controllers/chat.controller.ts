@@ -12,6 +12,8 @@ import {
   updateSiswebStatus,
 } from '../../infrastructure/database/dynamodb-chats.repository.js'
 import { getAgent, getDefaultAgent } from '../../infrastructure/database/agents.repository.js'
+import { getFineTunedModel } from '../../infrastructure/database/finetuned-models.repository.js'
+import { invokeFineTunedModel, estimateCost } from '../../infrastructure/aws/finetuned-model.service.js'
 import { generateSmartTitle } from '../../infrastructure/aws/title-summarizer.service.js'
 import { sendInteractionLog } from '../../infrastructure/sisweb/sisweb-logger.service.js'
 import { checkAbuse } from '../../infrastructure/abuse-detection.js'
@@ -145,7 +147,7 @@ chatRoutes.post('/', async (req: any, res) => {
     return res.status(401).json({ error: 'Usuário não autenticado' })
   }
 
-  const { chatId, message, agentId: requestedAgentId } = req.body
+  const { chatId, message, agentId: requestedAgentId, finetunedModelId } = req.body
 
   if (!message?.trim()) {
     return res.status(400).json({ error: 'Mensagem é obrigatória' })
@@ -161,10 +163,18 @@ chatRoutes.post('/', async (req: any, res) => {
     return res.status(429).json({ error: abuseCheck.reason })
   }
 
-  // Resolver agente
+  // Resolver agente/modelo — se finetunedModelId for informado, usa Custom Model (InvokeModel)
+  // em vez de Bedrock Agent (InvokeAgent). Os dois mecanismos são mutuamente exclusivos.
   let agentConfig = null
-  if (requestedAgentId) agentConfig = await getAgent(requestedAgentId)
-  if (!agentConfig) agentConfig = await getDefaultAgent()
+  let finetunedModel = null
+  if (finetunedModelId) {
+    finetunedModel = await getFineTunedModel(finetunedModelId)
+    if (!finetunedModel) return res.status(404).json({ error: 'Modelo fine-tuned não encontrado.' })
+    if (!finetunedModel.isActive) return res.status(400).json({ error: 'Este modelo fine-tuned está desativado (standby).' })
+  } else {
+    if (requestedAgentId) agentConfig = await getAgent(requestedAgentId)
+    if (!agentConfig) agentConfig = await getDefaultAgent()
+  }
 
   // Criar chat se necessário
   let currentChatId = chatId
@@ -174,6 +184,98 @@ chatRoutes.post('/', async (req: any, res) => {
   }
 
   await addMessage(currentChatId, 'user', message, req.user.id, { userName: req.user.name || req.user.email })
+
+  const tsReq = new Date()
+
+  // ── Caminho: modelo fine-tuned (InvokeModel, sem orquestração de agente) ──
+  if (finetunedModel) {
+    try {
+      const result = await invokeFineTunedModel(finetunedModel, message, currentChatId)
+      const tsResp = new Date()
+      const estimatedCostUsd = estimateCost(finetunedModel, result.inputTokens, result.outputTokens)
+
+      const messageId = await addMessage(currentChatId, 'assistant', result.response, req.user.id, {
+        finetunedModelId: finetunedModel.id,
+        userName: req.user.name || req.user.email,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        latencyMs: result.latencyMs,
+        siswebStatus: 'pending',
+      })
+
+      logToSisweb({
+        req,
+        chatId: currentChatId,
+        messageId,
+        question: message,
+        answer: result.response,
+        sessionId: currentChatId,
+        userId: req.user.id,
+        tsReq,
+        tsResp,
+        statusHttp: '200',
+        modelName: finetunedModel.name,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+      })
+
+      if (!chatId) {
+        generateSmartTitle(message)
+          .then((title) => updateChatTitle(req.user.id, currentChatId, title))
+          .catch((err) => console.error('[chat] Erro ao gerar título:', err.message))
+      } else {
+        getMessages(currentChatId)
+          .then((msgs) => {
+            const userMsgs = msgs.filter(m => m.role === 'user')
+            if (userMsgs.length > 1 && userMsgs.length % 3 === 0) {
+              generateSmartTitle(message)
+                .then((title) => updateChatTitle(req.user.id, currentChatId, title))
+                .catch((err) => console.error('[chat] Erro ao atualizar título:', err.message))
+            }
+          })
+          .catch(() => {})
+      }
+
+      return res.json({
+        chatId: currentChatId,
+        messageId,
+        response: result.response,
+        usedFallback: result.usedFallback,
+        estimatedCostUsd,
+      })
+    } catch (error: any) {
+      const tsResp = new Date()
+      const friendly = `Erro ao invocar modelo fine-tuned: ${error.message || 'Erro desconhecido'}`
+
+      try {
+        const messageId = await addMessage(currentChatId, 'assistant', friendly, req.user.id, {
+          finetunedModelId: finetunedModel.id,
+          userName: req.user.name || req.user.email,
+          siswebStatus: 'pending',
+        })
+
+        logToSisweb({
+          req,
+          chatId: currentChatId,
+          messageId,
+          question: message,
+          answer: friendly,
+          sessionId: currentChatId,
+          userId: req.user.id,
+          tsReq,
+          tsResp,
+          statusHttp: '500',
+          modelName: finetunedModel.name,
+        })
+
+        return res.json({ chatId: currentChatId, messageId, response: friendly })
+      } catch {
+        return res.status(500).json({ error: friendly })
+      }
+    }
+  }
+
+  // ── Caminho: Bedrock Agent (InvokeAgent, com orquestração e trace) ──
 
   // Item 3: detectar expiração de sessão Bedrock e montar resumo
   let sessionSummary: string | undefined
@@ -193,7 +295,6 @@ chatRoutes.post('/', async (req: any, res) => {
 
   if (sessionSummary) invokeOptions.sessionSummary = sessionSummary
 
-  const tsReq = new Date()
   let bedrockResult
   try {
     bedrockResult = await generateResponseWithBedrock(message, currentChatId, invokeOptions)
@@ -266,13 +367,15 @@ chatRoutes.post('/', async (req: any, res) => {
         .then((title) => updateChatTitle(req.user.id, currentChatId, title))
         .catch((err) => console.error('[chat] Erro ao gerar título:', err.message))
     } else {
-      // Chat existente — verificar se deve atualizar título (a cada 5 mensagens do usuário)
+      // Chat existente — regenera o título com mais frequência (a cada 3 mensagens do
+      // usuário) e usa APENAS a mensagem mais recente como base, não uma mistura das
+      // últimas 3. Isso evita que o título fique "preso" em um assunto antigo quando o
+      // usuário muda de tema ou de agente no meio da conversa.
       getMessages(currentChatId)
         .then((msgs) => {
           const userMsgs = msgs.filter(m => m.role === 'user')
-          if (userMsgs.length > 1 && userMsgs.length % 5 === 0) {
-            const recentContext = userMsgs.slice(-3).map(m => m.content).join(' | ')
-            generateSmartTitle(recentContext)
+          if (userMsgs.length > 1 && userMsgs.length % 3 === 0) {
+            generateSmartTitle(message)
               .then((title) => updateChatTitle(req.user.id, currentChatId, title))
               .catch((err) => console.error('[chat] Erro ao atualizar título:', err.message))
           }
