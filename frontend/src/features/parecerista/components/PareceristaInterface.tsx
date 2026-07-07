@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ClipboardCheck, Filter, BarChart3, FileDown } from 'lucide-react'
 import { api } from '@/src/shared/services/api'
+import { useAuth } from '@/src/shared/contexts/AuthContext'
 import type { Parecer, ParecerStatus, Message } from '@tesouro-nacional/shared'
 import { ParecerForm } from './ParecerForm'
 import { ParecerList } from './ParecerList'
@@ -20,6 +21,8 @@ export function PareceristaInterface() {
   const [pareceres, setPareceres] = useState<Parecer[]>([])
   const [filterStatus, setFilterStatus] = useState<ParecerStatus | 'todos'>('todos')
   const [loading, setLoading] = useState(false)
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   // Estado para nova avaliação (buscar mensagens de um chat)
   const [chatId, setChatId] = useState('')
@@ -84,27 +87,31 @@ export function PareceristaInterface() {
           >
             Nova Avaliação
           </button>
-          <button
-            onClick={() => setViewMode('historico')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              viewMode === 'historico'
-                ? 'bg-white text-primary-700 shadow-sm'
-                : 'text-neutral-600 hover:text-neutral-800'
-            }`}
-          >
-            Histórico
-          </button>
-          <button
-            onClick={() => setViewMode('stats')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              viewMode === 'stats'
-                ? 'bg-white text-primary-700 shadow-sm'
-                : 'text-neutral-600 hover:text-neutral-800'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5 inline mr-1" />
-            Estatísticas
-          </button>
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => setViewMode('historico')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  viewMode === 'historico'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-neutral-600 hover:text-neutral-800'
+                }`}
+              >
+                Histórico
+              </button>
+              <button
+                onClick={() => setViewMode('stats')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  viewMode === 'stats'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-neutral-600 hover:text-neutral-800'
+                }`}
+              >
+                <BarChart3 className="w-3.5 h-3.5 inline mr-1" />
+                Estatísticas
+              </button>
+            </>
+          )}
         </div>
       </div>
 

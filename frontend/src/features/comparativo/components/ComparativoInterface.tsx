@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react'
 import { GitCompare, Send, Loader2, BarChart3 } from 'lucide-react'
 import { api } from '@/src/shared/services/api'
+import { useAuth } from '@/src/shared/contexts/AuthContext'
 import { ComparativoResult } from './ComparativoResult'
 import { ComparativoStats } from './ComparativoStats'
 import { ComparativoHistory } from './ComparativoHistory'
@@ -49,6 +50,8 @@ export function ComparativoInterface() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Comparativo | null>(null)
   const [error, setError] = useState('')
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   // Carregar agentes disponíveis
   useEffect(() => {
@@ -122,27 +125,31 @@ export function ComparativoInterface() {
           >
             Nova Comparação
           </button>
-          <button
-            onClick={() => setViewMode('historico')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              viewMode === 'historico'
-                ? 'bg-white text-primary-700 shadow-sm'
-                : 'text-neutral-600 hover:text-neutral-800'
-            }`}
-          >
-            Histórico
-          </button>
-          <button
-            onClick={() => setViewMode('stats')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              viewMode === 'stats'
-                ? 'bg-white text-primary-700 shadow-sm'
-                : 'text-neutral-600 hover:text-neutral-800'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5 inline mr-1" />
-            Métricas
-          </button>
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => setViewMode('historico')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  viewMode === 'historico'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-neutral-600 hover:text-neutral-800'
+                }`}
+              >
+                Histórico
+              </button>
+              <button
+                onClick={() => setViewMode('stats')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  viewMode === 'stats'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-neutral-600 hover:text-neutral-800'
+                }`}
+              >
+                <BarChart3 className="w-3.5 h-3.5 inline mr-1" />
+                Métricas
+              </button>
+            </>
+          )}
         </div>
       </div>
 
