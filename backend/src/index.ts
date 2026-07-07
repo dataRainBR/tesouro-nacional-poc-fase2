@@ -42,7 +42,10 @@ const app = express()
 const PORT = process.env.PORT || 3001
 
 // ── Middleware global ─────────────────────────────────────────────────────────
-app.use(helmet())
+// HSTS desabilitado: a POC é servida via HTTP no DNS do ELB (sem certificado válido
+// para esse hostname). Com HSTS o browser força HTTPS e a validação TLS falha,
+// quebrando as chamadas fetch() do frontend. Reabilitar quando houver domínio + cert próprios.
+app.use(helmet({ hsts: false }))
 
 // Em dev, aceita qualquer porta localhost (Vite pode subir em 5173, 5174, 5175...)
 // Em produção, restringe estritamente ao(s) domínio(s) configurado(s) em CORS_ORIGIN.
