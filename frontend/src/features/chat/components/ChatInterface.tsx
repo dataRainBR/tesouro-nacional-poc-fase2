@@ -141,11 +141,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     }
   }, [])
 
-  // Identificar agentes por tipo (comum vs parecerista/fine-tuning)
-  // Modo Comum e Parecerista: mostrar agentes REDSHIFT e API no dropdown
-  const comunAgents = agents.filter(a =>
-    a.name.toUpperCase().includes('REDSHIFT') || a.name.toUpperCase().includes('API')
-  )
+  // Modo Comum: mostra TODOS os agentes cadastrados no dropdown
+  const comunAgents = agents
   const pareceristAgents = agents.filter(a => a.name.includes('FINE-TUNING') || a.name.includes('Parecerista'))
 
   // Fine-tuning: modelos reais cadastrados (Custom Models Bedrock ativos com deployment on-demand)
