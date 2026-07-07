@@ -57,6 +57,8 @@ app.use(cors({
     if (!origin) return callback(null, true) // requisições sem origin (curl, health check)
     if (isDev && /^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true)
     if (corsOrigins?.includes(origin)) return callback(null, true)
+    // POC servida atrás do ALB (mesmo host de frontend e backend) — aceitar o domínio do ELB
+    if (/^https?:\/\/[a-zA-Z0-9.-]+\.elb\.amazonaws\.com$/.test(origin)) return callback(null, true)
     callback(new Error(`Origem não permitida pelo CORS: ${origin}`))
   },
   credentials: true,
